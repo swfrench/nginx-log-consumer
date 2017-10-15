@@ -8,14 +8,23 @@ import (
 )
 
 const (
-	statusCountMetric = "custom.googleapis.com/http_response_count"
+	// CustomStatusCountMetric is the name of the custom cumulative metric
+	// to which status counts are written.
+	CustomStatusCountMetric = "custom.googleapis.com/http_response_count"
 )
 
+// ExporterT defines the interface implemented by CloudMonitoringExporter. For
+// use in mocks.
 type ExporterT interface {
 	IncrementStatusCounts(map[string]int64) error
 	GetResetTime() time.Time
 }
 
+// CloudMonitoringExporter exports various metrics collected from nginx access
+// logs to custom Stackdriver metrics. Only HTTP response code counts are
+// currently supported.
+// Note: CloudMonitoringExporter assumes that the cumulative response status
+// count metric already exists. See CustomStatusCountMetric.
 type CloudMonitoringExporter struct {
 	monitoringService *monitoring.Service
 	projectID         string
@@ -24,6 +33,8 @@ type CloudMonitoringExporter struct {
 	resourceLabels    map[string]string
 }
 
+// NewCloudMonitoringExporter creates a new CloudMonitoringExporter configured
+// to export metrics for the provided project / resource.
 func NewCloudMonitoringExporter(service *monitoring.Service, projectID string, resourceLabels map[string]string) *CloudMonitoringExporter {
 	return &CloudMonitoringExporter{
 		monitoringService: service,
@@ -34,6 +45,7 @@ func NewCloudMonitoringExporter(service *monitoring.Service, projectID string, r
 	}
 }
 
+// GetResetTime returns last reset time of cumulative counter metrics.
 func (e *CloudMonitoringExporter) GetResetTime() time.Time {
 	return e.resetTime
 }
@@ -41,7 +53,7 @@ func (e *CloudMonitoringExporter) GetResetTime() time.Time {
 func (e *CloudMonitoringExporter) writeStatusCount(status string, count int64) error {
 	timeseries := monitoring.TimeSeries{
 		Metric: &monitoring.Metric{
-			Type: statusCountMetric,
+			Type: CustomStatusCountMetric,
 			Labels: map[string]string{
 				"response_code": status,
 			},
@@ -75,6 +87,9 @@ func (e *CloudMonitoringExporter) writeStatusCount(status string, count int64) e
 	return nil
 }
 
+// IncrementStatusCounts increments internal HTTP response status counters by
+// the provided map of deltas and writes the updated cumulative values to
+// Stackdriver.
 func (e *CloudMonitoringExporter) IncrementStatusCounts(counts map[string]int64) error {
 	for status := range counts {
 		if curr, ok := e.statusCounts[status]; ok {

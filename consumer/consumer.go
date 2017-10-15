@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	// ISO8601 contains a time.Parse reference timestamp for ISO 8601.
 	ISO8601 = "2006-01-02T15:04:05-07:00"
 )
 
@@ -21,6 +22,9 @@ type logLine struct {
 	Status string
 }
 
+// Consumer implements periodic polling of the supplied nginx access log
+// tailer, aggregation of response counts from the returned log lines, and
+// reporting of the latter via the supplied exporter (e.g. to Stackdriver).
 type Consumer struct {
 	Period   time.Duration
 	tailer   tailer.TailerT
@@ -28,6 +32,8 @@ type Consumer struct {
 	stop     chan bool
 }
 
+// NewConsumer returns a Consumer polling the supplied tailer and reporting to
+// the supplied exporter with the specified period.
 func NewConsumer(period time.Duration, tailer tailer.TailerT, exporter exporter.ExporterT) *Consumer {
 	return &Consumer{
 		Period:   period,
@@ -73,6 +79,8 @@ func (c *Consumer) consumeBytes(b []byte) error {
 	return c.exporter.IncrementStatusCounts(statusCounts)
 }
 
+// Run performs periodic polling and exporting. It will only return on error or
+// if Stop is called.
 func (c *Consumer) Run() error {
 	for {
 		select {
@@ -90,6 +98,8 @@ func (c *Consumer) Run() error {
 	return nil
 }
 
+// Stop signals that polling should cease in Run and the latter should return
+// (e.g. if Run is blocking in another goroutine).
 func (c *Consumer) Stop() {
 	c.stop <- true
 }
