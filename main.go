@@ -33,6 +33,8 @@ var (
 	defaultInstanceName = flag.String("default_instance_name", "", "Instance name to use when metadata service is disabled or OnGCE() returns false.")
 
 	defaultZoneName = flag.String("default_zone_name", "", "Zone name to use when metadata service is disabled or OnGCE() returns false.")
+
+	createCustomMetrics = flag.Bool("create_custom_metrics", false, "If true, attempt to create custom metrics before starting logs consumption.")
 )
 
 func getMetadata() (string, map[string]string) {
@@ -113,6 +115,12 @@ func main() {
 	log.Printf("Creating GCM exporter for project %s; resource: %v", projectID, resourceLabels)
 
 	e := exporter.NewCloudMonitoringExporter(monitoringService, projectID, resourceLabels)
+
+	if *createCustomMetrics {
+		if err := e.CreateMetrics(); err != nil {
+			log.Fatalf("Failed to create custom metrics: %v", err)
+		}
+	}
 
 	c := consumer.NewConsumer(*logPollingPeriod, t, e)
 

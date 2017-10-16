@@ -23,8 +23,6 @@ type ExporterT interface {
 // CloudMonitoringExporter exports various metrics collected from nginx access
 // logs to custom Stackdriver metrics. Only HTTP response code counts are
 // currently supported.
-// Note: CloudMonitoringExporter assumes that the cumulative response status
-// count metric already exists. See CustomStatusCountMetric.
 type CloudMonitoringExporter struct {
 	monitoringService *monitoring.Service
 	projectID         string
@@ -48,6 +46,32 @@ func NewCloudMonitoringExporter(service *monitoring.Service, projectID string, r
 // GetResetTime returns last reset time of cumulative counter metrics.
 func (e *CloudMonitoringExporter) GetResetTime() time.Time {
 	return e.resetTime
+}
+
+// CreateMetrics creates the custom Stackdriver metrics written by
+// CloudMonitoringExporter. It is assumed that this will have been called at
+// least once before the exporter is actually used (e.g. by calling
+// IncrementStatusCounts).
+func (e *CloudMonitoringExporter) CreateMetrics() error {
+	// Status count metric.
+	ldesc := monitoring.LabelDescriptor{
+		Key:         "response_code",
+		ValueType:   "INT64",
+		Description: "HTTP status code",
+	}
+	desc := monitoring.MetricDescriptor{
+		Type:        CustomStatusCountMetric,
+		Labels:      []*monitoring.LabelDescriptor{&ldesc},
+		MetricKind:  "CUMULATIVE",
+		ValueType:   "INT64",
+		Description: "Cumulative count of HTTP responses by status code.",
+	}
+
+	if _, err := e.monitoringService.Projects.MetricDescriptors.Create(fmt.Sprintf("projects/%s", e.projectID), &desc).Do(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (e *CloudMonitoringExporter) writeStatusCount(status string, count int64) error {
@@ -79,8 +103,7 @@ func (e *CloudMonitoringExporter) writeStatusCount(status string, count int64) e
 		TimeSeries: []*monitoring.TimeSeries{&timeseries},
 	}
 
-	_, err := e.monitoringService.Projects.TimeSeries.Create(fmt.Sprintf("projects/%s", e.projectID), &createTimeseriesRequest).Do()
-	if err != nil {
+	if _, err := e.monitoringService.Projects.TimeSeries.Create(fmt.Sprintf("projects/%s", e.projectID), &createTimeseriesRequest).Do(); err != nil {
 		return err
 	}
 
