@@ -72,7 +72,6 @@ func (c *Consumer) consumeBytes(b []byte) error {
 			}
 		}
 	}
-	log.Printf("Captured status code counters: %v", statusCounts)
 
 	return c.exporter.IncrementStatusCounter(statusCounts)
 }
