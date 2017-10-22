@@ -65,28 +65,38 @@ func (c *StatusCounter) Create() error {
 	return nil
 }
 
-func (c *StatusCounter) write(status string, count int64) error {
-	p := &monitoring.Point{
-		Interval: &monitoring.TimeInterval{
-			StartTime: c.resetTime.UTC().Format(time.RFC3339Nano),
-			EndTime:   time.Now().UTC().Format(time.RFC3339Nano),
-		},
-		Value: &monitoring.TypedValue{
-			Int64Value: &count,
-		},
-	}
-	ts := &monitoring.TimeSeries{
-		Metric: &monitoring.Metric{
-			Type: StatusCountMetric,
-			Labels: map[string]string{
-				"response_code": status,
+func (c *StatusCounter) write() error {
+	var timeSeries []*monitoring.TimeSeries
+	for status := range c.counts {
+		count := c.counts[status]
+
+		p := &monitoring.Point{
+			Interval: &monitoring.TimeInterval{
+				StartTime: c.resetTime.UTC().Format(time.RFC3339Nano),
+				EndTime:   time.Now().UTC().Format(time.RFC3339Nano),
 			},
-		},
-		Resource: c.resource,
-		Points:   []*monitoring.Point{p},
+			Value: &monitoring.TypedValue{
+				Int64Value: &count,
+			},
+		}
+
+		ts := &monitoring.TimeSeries{
+			Metric: &monitoring.Metric{
+				Type: StatusCountMetric,
+				Labels: map[string]string{
+					"response_code": status,
+				},
+			},
+			Resource: c.resource,
+			Points:   []*monitoring.Point{
+				p,
+			},
+		}
+
+		timeSeries = append(timeSeries, ts)
 	}
 	r := &monitoring.CreateTimeSeriesRequest{
-		TimeSeries: []*monitoring.TimeSeries{ts},
+		TimeSeries: timeSeries,
 	}
 
 	if _, err := c.service.Projects.TimeSeries.Create(c.projectSpec, r).Do(); err != nil {
@@ -106,10 +116,8 @@ func (c *StatusCounter) Increment(counts map[string]int64) error {
 			c.counts[status] = counts[status]
 		}
 	}
-	for status := range c.counts {
-		if err := c.write(status, c.counts[status]); err != nil {
-			return err
-		}
+	if err := c.write(); err != nil {
+		return err
 	}
 
 	return nil
