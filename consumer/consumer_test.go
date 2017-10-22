@@ -15,11 +15,11 @@ type MockExporter struct {
 	resetTime    time.Time
 }
 
-func (e *MockExporter) GetResetTime() time.Time {
+func (e *MockExporter) StatusCounterResetTime() time.Time {
 	return e.resetTime
 }
 
-func (e *MockExporter) IncrementStatusCounts(counts map[string]int64) error {
+func (e *MockExporter) IncrementStatusCounter(counts map[string]int64) error {
 	e.callCount += 1
 	e.statusCounts = make(map[string]int64)
 	for code := range counts {
@@ -78,7 +78,7 @@ func TestSimple(t *testing.T) {
 		t.Fatalf("Consumer did not call MockTailer.Next()")
 	}
 	if exporter.callCount == 0 {
-		t.Fatalf("Consumer did not call MockExporter.IncrementStatusCounts()")
+		t.Fatalf("Consumer did not call MockExporter.IncrementStatusCounter()")
 	}
 }
 

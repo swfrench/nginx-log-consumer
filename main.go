@@ -114,7 +114,7 @@ func main() {
 
 	log.Printf("Creating GCM exporter for project %s; resource: %v", projectID, resourceLabels)
 
-	e := exporter.NewCloudMonitoringExporter(monitoringService, projectID, resourceLabels)
+	e := exporter.NewCloudMonitoringExporter(projectID, resourceLabels, monitoringService)
 
 	if *createCustomMetrics {
 		if err := e.CreateMetrics(); err != nil {

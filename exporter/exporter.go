@@ -1,51 +1,55 @@
 package exporter
 
 import (
-	"fmt"
 	"time"
 
 	"google.golang.org/api/monitoring/v3"
 )
 
-const (
-	// CustomStatusCountMetric is the name of the custom cumulative metric
-	// to which status counts are written.
-	CustomStatusCountMetric = "custom.googleapis.com/http_response_count"
-)
+// CounterMetricT provides an interface implemented by all cumulative counter
+// metrics. Can be used, for example, to implement mock counters for tests.
+type CounterMetricT interface {
+	Create() error
+	Increment(map[string]int64) error
+	ResetTime() time.Time
+}
 
 // ExporterT defines the interface implemented by CloudMonitoringExporter. For
 // use in mocks.
 type ExporterT interface {
-	IncrementStatusCounts(map[string]int64) error
-	GetResetTime() time.Time
+	IncrementStatusCounter(map[string]int64) error
+	StatusCounterResetTime() time.Time
 }
 
-// CloudMonitoringExporter exports various metrics collected from nginx access
-// logs to custom Stackdriver metrics. Only HTTP response code counts are
-// currently supported.
+// CloudMonitoringExporter exports metrics collected from nginx access logs to
+// custom Stackdriver metrics. Only HTTP response code counts are currently
+// supported.
 type CloudMonitoringExporter struct {
-	monitoringService *monitoring.Service
-	projectID         string
-	resetTime         time.Time
-	statusCounts      map[string]int64
-	resourceLabels    map[string]string
+	statusCounter CounterMetricT
 }
 
 // NewCloudMonitoringExporter creates a new CloudMonitoringExporter configured
 // to export metrics for the provided project / resource.
-func NewCloudMonitoringExporter(service *monitoring.Service, projectID string, resourceLabels map[string]string) *CloudMonitoringExporter {
+func NewCloudMonitoringExporter(project string, resourceLabels map[string]string, service *monitoring.Service) *CloudMonitoringExporter {
+	resource := &monitoring.MonitoredResource{
+		Labels: resourceLabels,
+		Type:   "gce_instance",
+	}
 	return &CloudMonitoringExporter{
-		monitoringService: service,
-		projectID:         projectID,
-		resetTime:         time.Now(),
-		statusCounts:      make(map[string]int64),
-		resourceLabels:    resourceLabels,
+		statusCounter: NewStatusCounter(project, resource, service),
 	}
 }
 
-// GetResetTime returns last reset time of cumulative counter metrics.
-func (e *CloudMonitoringExporter) GetResetTime() time.Time {
-	return e.resetTime
+// StatusCounterResetTime returnes the reset time of the response status
+// counter metric.
+func (e *CloudMonitoringExporter) StatusCounterResetTime() time.Time {
+	return e.statusCounter.ResetTime()
+}
+
+// ReplaceStatusCounter replaces the existing CounterMetricT for the status
+// counter metric with a different one. For use in tests.
+func (e *CloudMonitoringExporter) ReplaceStatusCounter(counter CounterMetricT) {
+	e.statusCounter = counter
 }
 
 // CreateMetrics creates the custom Stackdriver metrics written by
@@ -53,78 +57,19 @@ func (e *CloudMonitoringExporter) GetResetTime() time.Time {
 // least once before the exporter is actually used (e.g. by calling
 // IncrementStatusCounts).
 func (e *CloudMonitoringExporter) CreateMetrics() error {
-	// Status count metric.
-	ldesc := monitoring.LabelDescriptor{
-		Key:         "response_code",
-		ValueType:   "INT64",
-		Description: "HTTP status code",
-	}
-	desc := monitoring.MetricDescriptor{
-		Type:        CustomStatusCountMetric,
-		Labels:      []*monitoring.LabelDescriptor{&ldesc},
-		MetricKind:  "CUMULATIVE",
-		ValueType:   "INT64",
-		Description: "Cumulative count of HTTP responses by status code.",
-	}
-
-	if _, err := e.monitoringService.Projects.MetricDescriptors.Create(fmt.Sprintf("projects/%s", e.projectID), &desc).Do(); err != nil {
+	if err := e.statusCounter.Create(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (e *CloudMonitoringExporter) writeStatusCount(status string, count int64) error {
-	timeseries := monitoring.TimeSeries{
-		Metric: &monitoring.Metric{
-			Type: CustomStatusCountMetric,
-			Labels: map[string]string{
-				"response_code": status,
-			},
-		},
-		Resource: &monitoring.MonitoredResource{
-			Labels: e.resourceLabels,
-			Type:   "gce_instance",
-		},
-		Points: []*monitoring.Point{
-			{
-				Interval: &monitoring.TimeInterval{
-					StartTime: e.resetTime.UTC().Format(time.RFC3339Nano),
-					EndTime:   time.Now().UTC().Format(time.RFC3339Nano),
-				},
-				Value: &monitoring.TypedValue{
-					Int64Value: &count,
-				},
-			},
-		},
-	}
-
-	createTimeseriesRequest := monitoring.CreateTimeSeriesRequest{
-		TimeSeries: []*monitoring.TimeSeries{&timeseries},
-	}
-
-	if _, err := e.monitoringService.Projects.TimeSeries.Create(fmt.Sprintf("projects/%s", e.projectID), &createTimeseriesRequest).Do(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// IncrementStatusCounts increments internal HTTP response status counters by
+// IncrementStatusCounter increments internal HTTP response status counters by
 // the provided map of deltas and writes the updated cumulative values to
 // Stackdriver.
-func (e *CloudMonitoringExporter) IncrementStatusCounts(counts map[string]int64) error {
-	for status := range counts {
-		if curr, ok := e.statusCounts[status]; ok {
-			e.statusCounts[status] = counts[status] + curr
-		} else {
-			e.statusCounts[status] = counts[status]
-		}
-	}
-	for status := range e.statusCounts {
-		if err := e.writeStatusCount(status, e.statusCounts[status]); err != nil {
-			return err
-		}
+func (e *CloudMonitoringExporter) IncrementStatusCounter(counts map[string]int64) error {
+	if err := e.statusCounter.Increment(counts); err != nil {
+		return err
 	}
 
 	return nil

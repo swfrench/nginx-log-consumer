@@ -64,19 +64,17 @@ func (c *Consumer) consumeBytes(b []byte) error {
 			continue
 		}
 
-		if t.Before(c.exporter.GetResetTime()) {
-			continue
-		}
-
-		if tot, ok := statusCounts[line.Status]; ok {
-			statusCounts[line.Status] = 1 + tot
-		} else {
-			statusCounts[line.Status] = 1
+		if t.After(c.exporter.StatusCounterResetTime()) {
+			if tot, ok := statusCounts[line.Status]; ok {
+				statusCounts[line.Status] = 1 + tot
+			} else {
+				statusCounts[line.Status] = 1
+			}
 		}
 	}
 	log.Printf("Captured status code counters: %v", statusCounts)
 
-	return c.exporter.IncrementStatusCounts(statusCounts)
+	return c.exporter.IncrementStatusCounter(statusCounts)
 }
 
 // Run performs periodic polling and exporting. It will only return on error or
