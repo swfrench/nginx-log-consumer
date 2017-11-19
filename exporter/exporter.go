@@ -3,16 +3,10 @@ package exporter
 import (
 	"time"
 
+	"github.com/swfrench/nginx-log-consumer/exporter/counter"
+
 	"google.golang.org/api/monitoring/v3"
 )
-
-// CounterMetricT provides an interface implemented by all cumulative counter
-// metrics. Can be used, for example, to implement mock counters for tests.
-type CounterMetricT interface {
-	Create() error
-	Increment(map[string]int64) error
-	ResetTime() time.Time
-}
 
 // ExporterT defines the interface implemented by CloudMonitoringExporter. For
 // use in mocks.
@@ -25,7 +19,7 @@ type ExporterT interface {
 // custom Stackdriver metrics. Only HTTP response code counts are currently
 // supported.
 type CloudMonitoringExporter struct {
-	statusCounter CounterMetricT
+	statusCounter counter.CounterMetricT
 }
 
 // NewCloudMonitoringExporter creates a new CloudMonitoringExporter configured
@@ -36,7 +30,7 @@ func NewCloudMonitoringExporter(project string, resourceLabels map[string]string
 		Type:   "gce_instance",
 	}
 	return &CloudMonitoringExporter{
-		statusCounter: NewStatusCounter(project, resource, service),
+		statusCounter: counter.NewStatusCounter(project, resource, service),
 	}
 }
 
@@ -48,8 +42,8 @@ func (e *CloudMonitoringExporter) StatusCounterResetTime() time.Time {
 
 // ReplaceStatusCounter replaces the existing CounterMetricT for the status
 // counter metric with a different one. For use in tests.
-func (e *CloudMonitoringExporter) ReplaceStatusCounter(counter CounterMetricT) {
-	e.statusCounter = counter
+func (e *CloudMonitoringExporter) ReplaceStatusCounter(c counter.CounterMetricT) {
+	e.statusCounter = c
 }
 
 // CreateMetrics creates the custom Stackdriver metrics written by

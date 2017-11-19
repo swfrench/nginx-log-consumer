@@ -1,4 +1,4 @@
-package exporter
+package counter
 
 import (
 	"fmt"
@@ -13,13 +13,18 @@ const (
 	StatusCountMetric = "custom.googleapis.com/http_response_count"
 )
 
+type CreateMetricCallbackT func(string, *monitoring.MetricDescriptor) error
+type CreateTimeSeriesCallbackT func(string, *monitoring.CreateTimeSeriesRequest) error
+
 // StatusCounter implements CounterMetricT for HTTP respone status code counts.
 type StatusCounter struct {
 	projectSpec string
 	resource    *monitoring.MonitoredResource
-	service     *monitoring.Service
 	counts      map[string]int64
 	resetTime   time.Time
+	// Public for injection from unit tests:
+	CreateMetricCallback     CreateMetricCallbackT
+	CreateTimeSeriesCallback CreateTimeSeriesCallbackT
 }
 
 // NewStatusCounter creats a StatusCounter associated with the provided project
@@ -29,9 +34,16 @@ func NewStatusCounter(project string, resource *monitoring.MonitoredResource, se
 	return &StatusCounter{
 		projectSpec: projectResourceSpec(project),
 		resource:    resource,
-		service:     service,
 		counts:      make(map[string]int64),
 		resetTime:   time.Now(),
+		CreateMetricCallback: func(projectSpec string, desc *monitoring.MetricDescriptor) error {
+			_, err := service.Projects.MetricDescriptors.Create(projectSpec, desc).Do()
+			return err
+		},
+		CreateTimeSeriesCallback: func(projectSpec string, req *monitoring.CreateTimeSeriesRequest) error {
+			_, err := service.Projects.TimeSeries.Create(projectSpec, req).Do()
+			return err
+		},
 	}
 }
 
@@ -58,13 +70,15 @@ func (c *StatusCounter) Create() error {
 		Description: "Cumulative count of HTTP responses by status code.",
 	}
 
-	if _, err := c.service.Projects.MetricDescriptors.Create(c.projectSpec, desc).Do(); err != nil {
+	if err := c.CreateMetricCallback(c.projectSpec, desc); err != nil {
 		return err
 	}
 
 	return nil
 }
 
+// write will build a timeseries based on the current cumulative counter values
+// and write the result to stackdriver.
 func (c *StatusCounter) write() error {
 	var timeSeries []*monitoring.TimeSeries
 	for status := range c.counts {
@@ -88,7 +102,7 @@ func (c *StatusCounter) write() error {
 				},
 			},
 			Resource: c.resource,
-			Points:   []*monitoring.Point{
+			Points: []*monitoring.Point{
 				p,
 			},
 		}
@@ -99,7 +113,7 @@ func (c *StatusCounter) write() error {
 		TimeSeries: timeSeries,
 	}
 
-	if _, err := c.service.Projects.TimeSeries.Create(c.projectSpec, r).Do(); err != nil {
+	if err := c.CreateTimeSeriesCallback(c.projectSpec, r); err != nil {
 		return err
 	}
 
@@ -109,13 +123,22 @@ func (c *StatusCounter) write() error {
 // Increment will accumulate status code count deltas from the supplied map and
 // write a new timeseries point.
 func (c *StatusCounter) Increment(counts map[string]int64) error {
-	for status := range counts {
+	hasDelta := false
+	for status, count := range counts {
+		if count > 0 {
+			hasDelta = true
+		}
 		if curr, ok := c.counts[status]; ok {
-			c.counts[status] = counts[status] + curr
+			c.counts[status] = count + curr
 		} else {
-			c.counts[status] = counts[status]
+			c.counts[status] = count
 		}
 	}
+
+	if !hasDelta {
+		return nil
+	}
+
 	if err := c.write(); err != nil {
 		return err
 	}
