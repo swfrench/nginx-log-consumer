@@ -1,0 +1,12 @@
+[Unit]
+Description=nginx log consumer
+
+[Service]
+User=nginx_log_consumer
+EnvironmentFile=/etc/default/nginx_log_consumer
+ExecStart=/usr/sbin/nginx-log-consumer $OPTIONS
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
