@@ -1,10 +1,11 @@
 # Systemd setup
 
-1. Create an unprivileged user `nginx_log_consumer` with `/usr//sbin/nologin`
-   as a shell and read permissions for nginx access logs.
+1. Create an unprivileged system user `nginx_log_consumer` with read
+   permissions for nginx access logs. For example, on a Debian-based
+   distribution:
+   `useradd -r nginx_log_consumer -s /usr/sbin/nologin && usermod -a -G adm`
 2. Copy the binary to `/usr/sbin/nginx-log-consumer`.
-3. Copy `nginx_log_consumer.service` to
-   `/etc/systemd/system/nginx_log_consumer.service` and
+3. Copy `nginx_log_consumer.service` to `/etc/systemd/` or `/lib/systemd/` and
    `nginx_log_consumer.config` to `/etc/default/nginx_log_consumer`.
 4. Run `sudo systemctl enable nginx_log_consumer.service` and `sudo systemctl
    start nginx_log_consumer`.

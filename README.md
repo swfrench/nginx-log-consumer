@@ -8,9 +8,12 @@ status code counts, but should be straightforward to extend.
 
 ### Dependencies
 
+Run:
+
     go get -u cloud.google.com/go/monitoring/apiv3
 
-This should also pull in other deps, like the instance metadata service.
+to pull the monitoring API package into your `GOPATH`. This should also pull in
+other dependencies, like the instance metadata service.
 
 ### Log format
 
@@ -29,7 +32,3 @@ It is expected that nginx has been configured to write logs as json with ISO
     access_log /var/log/nginx/access.log json_combined;
 
 As noted above, only the `time` and `status` fields are examined for now.
-
-## TODO
-
-* Better unit tests for CloudMonitoringExporter.
